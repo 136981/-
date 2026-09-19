@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>邪恶力量的美国旅行地图</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
@@ -174,10 +174,12 @@ html,body{margin:0;height:100%;overflow:hidden;
   .title{top:12px;left:12px;padding:8px 14px;}
   .title h1{font-size:14px;}
   .controls{bottom:auto;top:12px;right:12px;left:auto;transform:none;}
-  .controls button{padding:8px 14px;font-size:13px;}
+  .controls button{padding:8px 12px;font-size:12.5px;}
   .toast{top:64px;font-size:12.5px;padding:8px 12px;max-width:92vw;gap:7px;}
   .toast .t-date{display:none;}
   .stop-tip{font-size:12px;padding:6px 10px;}
+  /* 移动端缩放按钮下移，避开面板 */
+  .leaflet-bottom.leaflet-right{bottom:6px;}
 }
 </style>
 </head>
@@ -245,9 +247,13 @@ const stops = [
 ];
 
 /* =========================================================
-   2. 地图初始化
+   2. 地图初始化（自适应移动端）
    ========================================================= */
-const map = L.map('map', { zoomControl:false, worldCopyJump:true });
+const map = L.map('map', {
+  zoomControl:false,
+  worldCopyJump:true,
+  minZoom:3
+});
 
 L.tileLayer('https://wprd0{s}.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&lang=zh_cn&size=1&scl=1&style=7', {
   subdomains:['1','2','3','4'],
@@ -260,13 +266,21 @@ L.control.zoom({ position:'bottomright' }).addTo(map);
 const latlngs = stops.map(s => s.coord);
 const bounds  = L.latLngBounds(latlngs);
 
+/* 是否移动端（与 CSS 断点一致） */
+const isMobile = () => window.matchMedia('(max-width: 720px)').matches;
+
+/* 不同屏幕给不同的留白：手机窄屏不能沿用桌面 380px 的右侧留白 */
+function fitPadding() {
+  return isMobile()
+    ? { paddingTopLeft:[20, 84], paddingBottomRight:[20, 60] }
+    : { paddingTopLeft:[40, 90], paddingBottomRight:[380, 90] };
+}
+
 function fitAll(animate = false) {
-  const opt = {
-    paddingTopLeft:[40, 90],
-    paddingBottomRight:[380, 90]
-  };
-  if (animate) map.flyToBounds(bounds, { ...opt, duration:1.2 });
-  else map.fitBounds(bounds, opt);
+  const opt  = fitPadding();
+  const guard = { maxZoom: isMobile() ? 6 : 8 };  // 限制初始缩放，避免贴太近
+  if (animate) map.flyToBounds(bounds, { ...opt, ...guard, duration:1.2 });
+  else map.fitBounds(bounds, { ...opt, ...guard });
 }
 fitAll();
 
@@ -435,7 +449,14 @@ function focusStop(i, opts = {}) {
   panel.classList.add('open');
 
   if (opts.fly !== false) {
-    map.flyTo(s.coord, 8.5, { duration:1.4 });
+    const z = isMobile() ? 7 : 8.5;
+    if (isMobile()) {
+      /* 手机端底部面板会遮住屏幕下方，把目标点往上偏移后再飞 */
+      const pt = map.project(s.coord, z).subtract([0, map.getSize().y * 0.22]);
+      map.flyTo(map.unproject(pt, z), z, { duration:1.4 });
+    } else {
+      map.flyTo(s.coord, z, { duration:1.4 });
+    }
   }
 }
 
@@ -571,6 +592,31 @@ function resetView() {
 btnReset.addEventListener('click', () => {
   cancelTour();
   resetView();
+});
+
+/* =========================================================
+   7. 屏幕尺寸变化（横竖屏切换）自适应
+   ========================================================= */
+let resizeTimer = null;
+let userInteracted = false;
+
+/* 用户手动拖拽/缩放后，就不再自动 fitAll 打扰他 */
+map.on('dragstart', () => { userInteracted = true; });
+map.on('zoomstart', (e) => { if (e.hard) userInteracted = true; });
+
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    map.invalidateSize();
+    if (!touring && !userInteracted && !panel.classList.contains('open')) {
+      fitAll();
+    }
+  }, 200);
+});
+
+/* 手机浏览器地址栏收起/展开也会触发视口变化 */
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => map.invalidateSize(), 300);
 });
 </script>
 </body>
