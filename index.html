@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>邪恶力量的美国旅行地图</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{
+  --accent:#ff6b6b;
+  --ink:#22303c;
+  --muted:#7d8b98;
+  --panel-w:340px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;height:100%;overflow:hidden;
+  font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  color:var(--ink);}
+#map{position:absolute;inset:0;background:#eef2f5;}
+
+/* ---------- 标题 ---------- */
+.title{
+  position:absolute;top:16px;left:16px;z-index:600;
+  background:rgba(255,255,255,.88);backdrop-filter:blur(10px);
+  padding:10px 18px;border-radius:14px;
+  box-shadow:0 6px 24px rgba(0,0,0,.12);pointer-events:none;
+}
+.title h1{margin:0;font-size:16px;letter-spacing:.5px;}
+.title small{display:block;margin-top:3px;font-size:12px;color:var(--muted);font-weight:400;}
+
+/* ---------- 控制条 ---------- */
+.controls{
+  position:absolute;left:50%;bottom:26px;transform:translateX(-50%);
+  z-index:600;display:flex;gap:8px;
+  background:rgba(255,255,255,.92);backdrop-filter:blur(10px);
+  padding:8px;border-radius:999px;box-shadow:0 10px 30px rgba(0,0,0,.16);
+}
+.controls button{
+  border:0;background:#eff3f7;color:var(--ink);cursor:pointer;
+  padding:9px 18px;border-radius:999px;font-size:14px;font-weight:600;
+  transition:background .2s,transform .1s;
+}
+.controls button:hover{background:#e2e9f0;}
+.controls button:active{transform:scale(.96);}
+.controls button:disabled{opacity:.6;cursor:default;}
+.controls button.primary{background:var(--accent);color:#fff;}
+.controls button.primary:hover{background:#ff5252;}
+
+/* ---------- 地图标记 ---------- */
+.stop-marker{background:none;border:none;}
+.stop-marker .dot{
+  position:relative;width:28px;height:28px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:#fff;color:var(--ink);
+  font:700 12px/1 system-ui;
+  border:2px solid var(--accent);
+  box-shadow:0 3px 10px rgba(0,0,0,.25);
+  transition:transform .25s,background .25s,color .25s;
+}
+.stop-marker .dot.active{
+  transform:scale(1.35);background:var(--accent);color:#fff;
+}
+.stop-marker .dot.active::after{
+  content:'';position:absolute;inset:-8px;border-radius:50%;
+  border:2px solid var(--accent);opacity:.7;
+  animation:pulse 1.8s ease-out infinite;
+}
+@keyframes pulse{
+  0%{transform:scale(.7);opacity:.7;}
+  100%{transform:scale(1.6);opacity:0;}
+}
+
+/* ---------- 标记上方的地点名气泡 ---------- */
+.stop-tip{
+  background:rgba(255,255,255,.97);
+  border:0;border-radius:12px;
+  padding:7px 12px;
+  box-shadow:0 8px 26px rgba(0,0,0,.2);
+  font-size:13px;font-weight:700;color:var(--ink);
+  white-space:nowrap;
+  animation:tipIn .28s cubic-bezier(.34,1.56,.64,1);
+}
+.stop-tip::before{display:none !important;}
+.stop-tip .tip-idx{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:18px;height:18px;border-radius:50%;margin-right:6px;
+  background:var(--accent);color:#fff;font-size:11px;font-weight:700;
+  vertical-align:1px;
+}
+.stop-tip .tip-date{
+  margin-left:7px;font-style:normal;font-weight:400;
+  font-size:11.5px;color:var(--muted);
+}
+@keyframes tipIn{
+  from{opacity:0;transform:translateY(6px) scale(.9);}
+  to  {opacity:1;transform:translateY(0) scale(1);}
+}
+
+/* ---------- 顶部到达提示条 ---------- */
+.toast{
+  position:absolute;top:16px;left:50%;
+  transform:translate(-50%,-16px);
+  z-index:620;pointer-events:none;
+  display:flex;align-items:center;gap:10px;
+  max-width:70vw;
+  background:rgba(34,48,60,.93);
+  color:#fff;padding:9px 16px;border-radius:999px;
+  box-shadow:0 12px 32px rgba(0,0,0,.28);
+  font-size:13.5px;font-weight:600;
+  opacity:0;transition:opacity .3s ease,transform .3s cubic-bezier(.34,1.56,.64,1);
+}
+.toast.show{opacity:1;transform:translate(-50%,0);}
+.toast .t-idx{
+  flex:none;background:var(--accent);border-radius:999px;
+  padding:2px 9px;font-size:11.5px;
+}
+.toast .t-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.toast .t-date{font-weight:400;font-size:11.5px;opacity:.7;white-space:nowrap;}
+
+/* ---------- 右侧面板 ---------- */
+#panel{
+  position:absolute;top:0;right:0;bottom:0;width:var(--panel-w);z-index:650;
+  background:#fff;box-shadow:-10px 0 36px rgba(0,0,0,.12);
+  display:flex;flex-direction:column;
+  transform:translateX(100%);
+  transition:transform .38s cubic-bezier(.4,0,.2,1);
+}
+#panel.open{transform:translateX(0);}
+
+.cover{position:relative;aspect-ratio:16/10;background:#e9eef3;
+  overflow:hidden;flex:none;}
+.cover img{width:100%;height:100%;object-fit:cover;display:block;
+  opacity:0;transition:opacity .45s;}
+.cover img.loaded{opacity:1;}
+.cover .hint{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:#a7b3bd;font-size:13px;letter-spacing:1px;
+}
+
+.body{padding:18px 20px 24px;overflow-y:auto;flex:1;}
+.head{display:flex;align-items:baseline;gap:10px;}
+.head h2{margin:0;font-size:19px;}
+.head span{font-size:12px;color:var(--accent);font-weight:600;
+  background:#fff0f0;padding:3px 8px;border-radius:999px;}
+#p-desc{margin:12px 0 20px;font-size:13.5px;line-height:1.75;color:#55636f;}
+
+.stoplist{list-style:none;margin:0;padding:0;border-top:1px solid #eef2f6;}
+.stoplist li{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 8px;border-bottom:1px solid #eef2f6;border-radius:8px;
+  font-size:13.5px;cursor:pointer;transition:background .18s;
+}
+.stoplist li:hover{background:#f7fafc;}
+.stoplist li.active{background:#fff2f2;font-weight:600;}
+.stoplist .idx{
+  width:20px;height:20px;border-radius:50%;flex:none;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;background:#eff3f7;color:#7d8b98;
+}
+.stoplist li.active .idx{background:var(--accent);color:#fff;}
+.stoplist .nm{flex:1;}
+.stoplist .dt{font-size:11.5px;color:var(--muted);}
+
+/* ---------- 移动端 ---------- */
+@media (max-width:720px){
+  #panel{
+    top:auto;height:52%;width:100%;
+    border-radius:20px 20px 0 0;
+    transform:translateY(100%);
+    box-shadow:0 -10px 36px rgba(0,0,0,.18);
+  }
+  #panel.open{transform:translateY(0);}
+  .cover{aspect-ratio:auto;height:38%;}
+  .title{top:12px;left:12px;padding:8px 14px;}
+  .title h1{font-size:14px;}
+  .controls{bottom:auto;top:12px;right:12px;left:auto;transform:none;}
+  .controls button{padding:8px 14px;font-size:13px;}
+  .toast{top:64px;font-size:12.5px;padding:8px 12px;max-width:92vw;gap:7px;}
+  .toast .t-date{display:none;}
+  .stop-tip{font-size:12px;padding:6px 10px;}
+}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="title">
+  <h1>邪恶力量的美国之旅</h1>
+  <small>点击标记查看场景 · 按播放自动巡游</small>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="controls">
+  <button id="btn-play" class="primary">▶ 播放巡游</button>
+  <button id="btn-pause" disabled>⏸ 暂停</button>
+  <button id="btn-reset">↺ 复位</button>
+</div>
+
+<aside id="panel">
+  <div class="cover" id="cover">
+    <img id="p-img" alt="">
+    <div class="hint">选择路线上的地点</div>
+  </div>
+  <div class="body">
+    <div class="head">
+      <h2 id="p-name">起点</h2>
+      <span id="p-date"></span>
+    </div>
+    <p id="p-desc">点击地图上的编号标记，或按「播放巡游」自动依次浏览每一站。</p>
+    <ol class="stoplist" id="stoplist"></ol>
+  </div>
+</aside>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* =========================================================
+   1. 行程数据
+   ========================================================= */
+const stops = [
+  { name:'加利福尼亚州 斯坦福大学', date:'S1E1 2005年12月', coord:[37.428230,-122.168861], desc:'公寓华尔兹', img:'images/images01.png' },
+  { name:'加利福尼亚州 耶利哥谷', date:'S1E1', coord:[38.83546,-122.43553], desc:'白衣女人', img:'images/images02.png' },
+  { name:'科罗拉多州 黑水峡谷（特有）', date:'S1E2', coord:[37.18556,-107.93923], desc:'温迪戈，双枪会告诉你答案', img:'images/images03.png' },
+  { name:'威斯康星州 曼尼托可湖', date:'S1E3', coord:[44.0886,-87.6576], desc:'湖中亡魂', img:'images/images04.png' },
+  { name:'宾法西尼亚州 纳萨勒', date:'S1E4', coord:[40.74038,-75.30962], desc:'幽灵乘客，怕高的猫', img:'images/images05.png' },
+  { name:'印第安纳州 韦恩堡', date:'S1E5', coord:[41.08056,-85.13917], desc:'血腥玛丽，是萨姆', img:'images/images06.png' },
+  { name:'密苏里州 圣路易斯', date:'S1E6', coord:[38.62722,-90.19778], desc:'变形怪', img:'images/images07.png' },
+  { name:'爱荷华州 安克尼', date:'S1E7', coord:[41.73,-93.61], desc:'十字架钩子男', img:'images/images08.png' },
+  { name:'俄克拉荷马州 绿洲平原（特有）', date:'S1E8', coord:[33.5833,-94.4833], desc:'虫灾，We accept homeowners of any race, religion, color or sexual orientation', img:'images/images09.png' },
+  { name:'堪萨斯州 劳伦斯', date:'S1E9', coord:[38.97167,-95.23528], desc:'老宅，玛丽再见', img:'images/images10.png' },
+  { name:'伊利诺伊州 洛克福德', date:'S1E10', coord:[42.27113,-89.094], desc:'精神病院 如何看待一起公路旅行的兄弟——枪吻', img:'images/images11.png' },
+  { name:'印第安纳州 伯基茨维尔（特有）', date:'S1E11 2006年4月', coord:[39.54444,-86.21944], desc:'稻草人 想念弟弟puppy eyes的第一天', img:'images/images12.png' },
+  { name:'内布拉斯加州', date:'S1E12', coord:[41.50028,-99.75067], desc:'信仰 选择土葬还是火葬', img:'images/images13.png' },
+  { name:'密苏里州 开普吉拉多', date:'S1E13', coord:[37.31083,-89.55972], desc:'魔鬼公路 邪灵穿过教堂就能被摧毁，也许', img:'images/images14.png' },
+  { name:'密歇根州 萨吉诺', date:'S1E14', coord:[43.41992,-83.95003], desc:'噩梦 萨姆的预知梦', img:'images/images15.png' },
+  { name:'明尼苏达州 希宾', date:'S1E15', coord:[47.41722,-92.93833], desc:'杀戮家族 被关笼子的萨姆', img:'images/images16.png' },
+  { name:'伊利诺伊州 芝加哥', date:'S1E16', coord:[41.8819,-87.6278], desc:'暗影 梅根设陷阱，哥俩同约翰碰面', img:'images/images17.png' },
+  { name:'德克萨斯州 理查德森', date:'S1E17', coord:[32.94818,-96.72972], desc:'地狱鬼宅 恶作剧周！', img:'images/images18.png' },
+  { name:'威斯康星州 菲奇堡', date:'S1E18', coord:[42.98588,-89.42547], desc:'邪物 怪病儿童，比基尼探员', img:'images/images19.png' },
+  { name:'纽约州 新帕尔茨', date:'S1E19', coord:[41.74806,-74.08500], desc:'罪恶起源 玩剃刀的小女孩', img:'images/images20.png' },
+  { name:'科罗拉多州 曼宁', date:'S1E20', coord:[40.7472,-106.20502], desc:'死者的鲜血 柯尔特枪出世', img:'images/images21.png' },
+  { name:'爱荷华州 萨尔维申', date:'S1E21', coord:[43.12427,-93.45138], desc:'救援行动 分头行动被俘永远不接电话的约翰', img:'images/images22.png' },
+  { name:'南达科他州 苏福尔斯', date:'S1E22', coord:[43.53639,-96.73167], desc:'魔鬼的陷阱 ', img:'images/images23.png' }
+];
+
+/* =========================================================
+   2. 地图初始化
+   ========================================================= */
+const map = L.map('map', { zoomControl:false, worldCopyJump:true });
+
+L.tileLayer('https://wprd0{s}.is.autonavi.com/appmaptile?x={x}&y={y}&z={z}&lang=zh_cn&size=1&scl=1&style=7', {
+  subdomains:['1','2','3','4'],
+  maxZoom:18,
+  attribution:'&copy; 高德地图'
+}).addTo(map);
+
+L.control.zoom({ position:'bottomright' }).addTo(map);
+
+const latlngs = stops.map(s => s.coord);
+const bounds  = L.latLngBounds(latlngs);
+
+function fitAll(animate = false) {
+  const opt = {
+    paddingTopLeft:[40, 90],
+    paddingBottomRight:[380, 90]
+  };
+  if (animate) map.flyToBounds(bounds, { ...opt, duration:1.2 });
+  else map.fitBounds(bounds, opt);
+}
+fitAll();
+
+/* =========================================================
+   3. 路线
+   ========================================================= */
+const line = L.polyline([], {
+  color:'#ff6b6b', weight:3.5, opacity:0.9,
+  lineJoin:'round', lineCap:'round'
+}).addTo(map);
+
+/* 段动画时长（毫秒）：从上一站画到下一站 */
+const SEG_MS = 1000;
+
+/* 从第 i-1 站动画延长到第 i 站 */
+function drawSegmentTo(i, token) {
+  const from = latlngs[i - 1];
+  const to   = latlngs[i];
+  const base = latlngs.slice(0, i);      // 已确定的站点坐标
+  return new Promise(resolve => {
+    let elapsed = 0;
+    let lastTime = performance.now();
+
+    function frame(now) {
+      if (isCancelled(token)) { resolve(); return; }
+      if (paused) { lastTime = now; requestAnimationFrame(frame); return; }
+
+      elapsed += now - lastTime;
+      lastTime = now;
+
+      const t = Math.min(elapsed / SEG_MS, 1);
+      const cur = [
+        from[0] + (to[0] - from[0]) * t,
+        from[1] + (to[1] - from[1]) * t
+      ];
+      line.setLatLngs([...base, cur]);
+
+      if (t < 1) requestAnimationFrame(frame);
+      else { line.setLatLngs(latlngs.slice(0, i + 1)); resolve(); }
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+/* =========================================================
+   4. 编号标记
+   ========================================================= */
+function makeIcon(index) {
+  return L.divIcon({
+    className:'stop-marker',
+    html:`<div class="dot">${index + 1}</div>`,
+    iconSize:[28, 28],
+    iconAnchor:[14, 14]
+  });
+}
+
+const markers = stops.map((s, i) => {
+  const m = L.marker(s.coord, { icon:makeIcon(i), title:s.name }).addTo(map);
+  m.on('click', () => focusStop(i));      // 点击即聚焦
+  return m;
+});
+
+/* =========================================================
+   5. 面板 UI
+   ========================================================= */
+const panel   = document.getElementById('panel');
+const imgEl   = document.getElementById('p-img');
+const coverEl = document.getElementById('cover');
+const hintEl  = coverEl.querySelector('.hint');
+const nameEl  = document.getElementById('p-name');
+const dateEl  = document.getElementById('p-date');
+const descEl  = document.getElementById('p-desc');
+const listEl  = document.getElementById('stoplist');
+
+stops.forEach((s, i) => {
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="idx">${i + 1}</span>
+                  <span class="nm">${s.name}</span>
+                  <span class="dt">${s.date || ''}</span>`;
+  li.addEventListener('click', () => focusStop(i));
+  listEl.appendChild(li);
+});
+
+function showImage(src) {
+  imgEl.classList.remove('loaded');
+  hintEl.style.display = 'flex';
+  hintEl.textContent = src ? '加载中…' : '暂无图片';
+  if (!src) { imgEl.removeAttribute('src'); return; }
+
+  imgEl.onload = () => {
+    imgEl.classList.add('loaded');
+    hintEl.style.display = 'none';
+  };
+  imgEl.onerror = () => {
+    imgEl.classList.remove('loaded');
+    hintEl.style.display = 'flex';
+    hintEl.textContent = '图片未找到';
+  };
+  imgEl.src = src;
+}
+
+function setActiveMarker(i) {
+  markers.forEach((m, j) => {
+    const el = m.getElement();
+    if (el) el.querySelector('.dot').classList.toggle('active', j === i);
+  });
+  [...listEl.children].forEach((li, j) =>
+    li.classList.toggle('active', j === i));
+}
+
+/* =========================================================
+   到达地点时显示地名（气泡 + 顶部提示条）
+   ========================================================= */
+const toastEl = document.getElementById('toast');
+
+const nameTip = L.tooltip({
+  direction:'top',
+  offset:[0, -18],
+  opacity:1,
+  className:'stop-tip'
+});
+
+let toastTimer = null;
+
+function showArrival(i) {
+  const s = stops[i];
+
+  nameTip
+    .setLatLng(s.coord)
+    .setContent(
+      `<span class="tip-idx">${i + 1}</span>${s.name}` +
+      (s.date ? `<em class="tip-date">${s.date}</em>` : '')
+    )
+    .addTo(map);
+
+  toastEl.innerHTML =
+    `<span class="t-idx">${i + 1}/${stops.length}</span>` +
+    `<span class="t-name">${s.name}</span>` +
+    (s.date ? `<span class="t-date">${s.date}</span>` : '');
+
+  toastEl.classList.remove('show');
+  void toastEl.offsetWidth;
+  toastEl.classList.add('show');
+
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2400);
+}
+
+function clearArrival() {
+  if (map.hasLayer(nameTip)) map.removeLayer(nameTip);
+  clearTimeout(toastTimer);
+  toastEl.classList.remove('show');
+  toastEl.innerHTML = '';
+}
+
+function focusStop(i, opts = {}) {
+  if (i < 0 || i >= stops.length) return;
+  const s = stops[i];
+
+  nameEl.textContent = s.name;
+  dateEl.textContent = s.date || '';
+  descEl.textContent = s.desc || '';
+  showImage(s.img);
+  setActiveMarker(i);
+  showArrival(i);
+  panel.classList.add('open');
+
+  if (opts.fly !== false) {
+    map.flyTo(s.coord, 8.5, { duration:1.4 });
+  }
+}
+
+/* =========================================================
+   6. 巡游播放
+   ========================================================= */
+const btnPlay  = document.getElementById('btn-play');
+const btnReset = document.getElementById('btn-reset');
+const btnPause = document.getElementById('btn-pause');
+let touring = false;
+
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+let paused = false;
+let resumeResolve = null;
+
+/* 巡游令牌：开始巡游 / 复位 时都会 +1，旧流程检测到令牌变化就立即退出 */
+let tourToken = 0;
+
+function isCancelled(token) { return token !== tourToken; }
+
+function pauseGate() {
+  if (!paused) return Promise.resolve();
+  return new Promise(r => { resumeResolve = r; });
+}
+
+function togglePause() {
+  if (!touring) return;
+  paused = !paused;
+  btnPause.textContent = paused ? '▶ 继续' : '⏸ 暂停';
+  if (!paused && resumeResolve) {
+    resumeResolve();
+    resumeResolve = null;
+  }
+}
+
+/* 可暂停、可取消的等待 */
+async function waitPausable(ms, token) {
+  let remaining = ms;
+  while (remaining > 0) {
+    if (isCancelled(token)) return;
+    if (paused) {
+      await pauseGate();
+      if (isCancelled(token)) return;
+      continue;
+    }
+    const chunk = Math.min(50, remaining);
+    await wait(chunk);
+    if (isCancelled(token)) return;
+    if (!paused) remaining -= chunk;
+  }
+}
+
+btnPause.addEventListener('click', togglePause);
+
+async function startTour() {
+  if (touring) return;
+
+  const token = ++tourToken;
+  touring = true;
+  paused = false;
+  btnPlay.disabled = true;
+  btnPlay.textContent = '巡游中…';
+  btnPause.disabled = false;
+  btnPause.textContent = '⏸ 暂停';
+
+  line.setLatLngs([]);
+  setActiveMarker(-1);
+  clearArrival();
+  panel.classList.remove('open');
+  fitAll();
+
+  await waitPausable(400, token);
+  if (isCancelled(token)) return;
+
+  /* ---------- 第 1 站：只放起点，不画线 ---------- */
+  line.setLatLngs([latlngs[0]]);
+  focusStop(0, { fly:false });           // 不自动聚焦，只更新面板/高亮/气泡
+  await waitPausable(1600, token);
+  if (isCancelled(token)) return;
+
+  /* ---------- 第 2 站起：红线动画延长一段，再更新面板 ---------- */
+  for (let i = 1; i < stops.length; i++) {
+    if (isCancelled(token)) return;
+    if (paused) {
+      await pauseGate();
+      if (isCancelled(token)) return;
+    }
+
+    await drawSegmentTo(i, token);       // ★ 站点间红线动画延长
+    if (isCancelled(token)) return;
+
+    focusStop(i, { fly:false });         // 不自动聚焦
+    await waitPausable(1600, token);
+  }
+
+  if (isCancelled(token)) return;
+
+  touring = false;
+  paused = false;
+  btnPlay.disabled = false;
+  btnPlay.textContent = '▶ 重新播放';
+  btnPause.disabled = true;
+  btnPause.textContent = '⏸ 暂停';
+}
+btnPlay.addEventListener('click', startTour);
+
+/* 中断当前巡游 */
+function cancelTour() {
+  tourToken++;
+  touring = false;
+  paused = false;
+  if (resumeResolve) { resumeResolve(); resumeResolve = null; }
+  btnPlay.disabled = false;
+  btnPlay.textContent = '▶ 播放巡游';
+  btnPause.disabled = true;
+  btnPause.textContent = '⏸ 暂停';
+}
+
+/* 复位视图 */
+function resetView() {
+  line.setLatLngs([]);
+  setActiveMarker(-1);
+  clearArrival();
+  panel.classList.remove('open');
+  showImage(null);
+  nameEl.textContent = '起点';
+  dateEl.textContent = '';
+  descEl.textContent = '点击地图上的编号标记，或按「播放巡游」自动依次浏览每一站。';
+  fitAll(true);
+}
+
+btnReset.addEventListener('click', () => {
+  cancelTour();
+  resetView();
+});
+</script>
+</body>
+</html>
